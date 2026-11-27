@@ -1,0 +1,959 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Задачи и Цели — Telegram Mini App</title>
+
+  <!-- Официальный скрипт Telegram WebApp -->
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Шрифт Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
+          },
+          colors: {
+            tgBg: 'var(--app-bg)',
+            tgCard: 'var(--app-card)',
+            tgText: 'var(--app-text)',
+            tgHint: 'var(--app-hint)',
+            tgAccent: 'var(--app-accent)',
+            tgAccentText: 'var(--app-accent-text)',
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    /* Переменные темы Telegram с современным тёмным фолбэком для браузера */
+    :root {
+      --app-bg: var(--tg-theme-bg-color, #0f172a);
+      --app-card: var(--tg-theme-secondary-bg-color, #1e293b);
+      --app-text: var(--tg-theme-text-color, #f8fafc);
+      --app-hint: var(--tg-theme-hint-color, #94a3b8);
+      --app-accent: var(--tg-theme-button-color, #3b82f6);
+      --app-accent-text: var(--tg-theme-button-text-color, #ffffff);
+      --app-border: rgba(148, 163, 184, 0.14);
+    }
+
+    * {
+      -webkit-tap-highlight-color: transparent;
+      box-sizing: border-box;
+    }
+
+    body {
+      background-color: var(--app-bg);
+      color: var(--app-text);
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      overscroll-behavior-y: none;
+    }
+
+    /* Тонкие границы и карточки */
+    .card-surface {
+      background-color: var(--app-card);
+      border: 1px solid var(--app-border);
+    }
+
+    /* Анимация чекбокса */
+    .check-circle {
+      transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    .check-circle.checked {
+      background-color: var(--app-accent);
+      border-color: var(--app-accent);
+      transform: scale(1.05);
+    }
+
+    /* Плавное появление bottom sheet */
+    .sheet-backdrop {
+      transition: opacity 0.22s ease;
+    }
+    .sheet-panel {
+      transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .sheet-hidden .sheet-backdrop {
+      opacity: 0;
+      pointer-events: none;
+    }
+    .sheet-hidden .sheet-panel {
+      transform: translateY(100%);
+    }
+
+    /* Скрытие скроллбара для горизонтальных чипов */
+    .no-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+    .no-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+
+    /* Уведомление-тост */
+    #toast {
+      transition: opacity 0.25s ease, transform 0.25s ease;
+    }
+  </style>
+</head>
+<body class="antialiased selection:bg-blue-500/30">
+
+  <!-- Основной мобильный контейнер -->
+  <div id="app" class="max-w-md mx-auto min-h-screen flex flex-col relative pb-28">
+
+    <!-- Верхняя шапка -->
+    <header class="px-5 pt-6 pb-4">
+      <div class="flex items-center justify-between">
+        <div>
+          <p id="current-date" class="text-xs font-medium uppercase tracking-wider text-tgHint mb-1"></p>
+          <h1 id="greeting" class="text-2xl font-bold tracking-tight">Привет!</h1>
+        </div>
+        <div id="avatar-badge" class="w-11 h-11 rounded-2xl card-surface flex items-center justify-center text-lg font-semibold text-tgAccent shadow-sm">
+          🎯
+        </div>
+      </div>
+
+      <!-- Компактный прогресс дня (виден на вкладке Задачи) -->
+      <div id="daily-progress-card" class="mt-4 p-4 rounded-2xl card-surface">
+        <div class="flex items-center justify-between text-xs mb-2">
+          <span class="text-tgHint font-medium">Прогресс по задачам</span>
+          <span id="daily-progress-text" class="font-semibold text-tgText">0 из 0 (0%)</span>
+        </div>
+        <div class="w-full h-2 rounded-full bg-slate-500/20 overflow-hidden">
+          <div id="daily-progress-bar" class="h-full rounded-full bg-tgAccent transition-all duration-500 ease-out" style="width: 0%"></div>
+        </div>
+      </div>
+    </header>
+
+    <!-- Контент вкладок -->
+    <main class="flex-1 px-5 space-y-4">
+
+      <!-- ==================== ВКЛАДКА 1: ЗАДАЧИ ==================== -->
+      <section id="tab-tasks" class="space-y-4">
+        <!-- Фильтры -->
+        <div class="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5">
+          <button data-filter="all" class="filter-chip px-4 py-2 rounded-xl text-xs font-semibold transition-all">Все</button>
+          <button data-filter="active" class="filter-chip px-4 py-2 rounded-xl text-xs font-semibold transition-all">В работе</button>
+          <button data-filter="done" class="filter-chip px-4 py-2 rounded-xl text-xs font-semibold transition-all">Готово</button>
+        </div>
+
+        <!-- Список задач -->
+        <div id="tasks-list" class="space-y-2.5"></div>
+
+        <!-- Пустое состояние -->
+        <div id="tasks-empty" class="hidden py-12 text-center">
+          <div class="w-14 h-14 mx-auto mb-3 rounded-2xl card-surface flex items-center justify-center text-2xl">✨</div>
+          <p class="text-sm font-medium text-tgText">Здесь пока пусто</p>
+          <p class="text-xs text-tgHint mt-1">Нажми «+», чтобы добавить первую задачу</p>
+        </div>
+      </section>
+
+      <!-- ==================== ВКЛАДКА 2: ЦЕЛИ ==================== -->
+      <section id="tab-goals" class="hidden space-y-3.5">
+        <div id="goals-list" class="space-y-3.5"></div>
+
+        <div id="goals-empty" class="hidden py-12 text-center">
+          <div class="w-14 h-14 mx-auto mb-3 rounded-2xl card-surface flex items-center justify-center text-2xl">🎯</div>
+          <p class="text-sm font-medium text-tgText">Целей пока нет</p>
+          <p class="text-xs text-tgHint mt-1">Поставь главную цель и разбей её на задачи</p>
+        </div>
+      </section>
+
+      <!-- ==================== ВКЛАДКА 3: ПРОГРЕСС ==================== -->
+      <section id="tab-stats" class="hidden space-y-4">
+        <!-- 3 карточки метрик -->
+        <div class="grid grid-cols-3 gap-2.5">
+          <div class="p-3.5 rounded-2xl card-surface text-center">
+            <p id="stat-done-tasks" class="text-2xl font-bold text-tgText">0</p>
+            <p class="text-[11px] text-tgHint mt-1 leading-tight">Выполнено задач</p>
+          </div>
+          <div class="p-3.5 rounded-2xl card-surface text-center">
+            <p id="stat-active-goals" class="text-2xl font-bold text-tgText">0</p>
+            <p class="text-[11px] text-tgHint mt-1 leading-tight">Активных целей</p>
+          </div>
+          <div class="p-3.5 rounded-2xl card-surface text-center">
+            <p id="stat-total-progress" class="text-2xl font-bold text-tgAccent">0%</p>
+            <p class="text-[11px] text-tgHint mt-1 leading-tight">Общий прогресс</p>
+          </div>
+        </div>
+
+        <!-- Разбивка по целям -->
+        <div class="p-4 rounded-2xl card-surface space-y-3.5">
+          <h2 class="text-sm font-semibold text-tgText">Прогресс по целям</h2>
+          <div id="stats-goals-breakdown" class="space-y-3"></div>
+        </div>
+
+        <!-- Очистка выполненных задач -->
+        <button id="btn-clear-completed" class="w-full py-3.5 px-4 rounded-2xl card-surface text-rose-400 text-sm font-medium flex items-center justify-center gap-2 active:scale-[0.98] transition-transform">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+          </svg>
+          Очистить выполненные задачи
+        </button>
+      </section>
+    </main>
+
+    <!-- Плавающая кнопка добавления (FAB) -->
+    <button id="fab-add" aria-label="Добавить" class="fixed bottom-24 right-5 max-w-md z-30 w-14 h-14 rounded-2xl bg-tgAccent text-tgAccentText shadow-lg shadow-blue-500/30 flex items-center justify-center active:scale-90 transition-transform">
+      <svg class="w-7 h-7" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/>
+      </svg>
+    </button>
+
+    <!-- Нижняя панель навигации -->
+    <nav class="fixed bottom-0 left-0 right-0 z-30">
+      <div class="max-w-md mx-auto px-4 pb-4 pt-2 bg-gradient-to-t from-tgBg via-tgBg to-transparent">
+        <div class="card-surface rounded-2xl p-1.5 grid grid-cols-3 gap-1 shadow-xl backdrop-blur-md">
+          <button data-tab="tasks" class="nav-btn flex flex-col items-center justify-center py-2 rounded-xl transition-all">
+            <svg class="w-5 h-5 mb-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+            <span class="text-[11px] font-medium">Задачи</span>
+          </button>
+
+          <button data-tab="goals" class="nav-btn flex flex-col items-center justify-center py-2 rounded-xl transition-all">
+            <svg class="w-5 h-5 mb-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M15.59 14.37a6 6 0 01-5.84 7.38v-4.8m5.84-2.58a14.98 14.98 0 006.16-12.12A14.98 14.98 0 009.631 8.41m5.96 5.96a14.926 14.926 0 01-5.841 2.58m-.119-8.54a6 6 0 00-7.381 5.84h4.8m2.581-5.84a14.927 14.927 0 00-2.58 5.84m2.699 2.7c-.103.021-.207.041-.311.06a15.09 15.09 0 01-2.448-2.448 14.9 14.9 0 01.06-.312m-2.24 2.39a4.493 4.493 0 00-1.757 4.306 4.493 4.493 0 004.306-1.758M16.5 9a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0z"/>
+            </svg>
+            <span class="text-[11px] font-medium">Цели</span>
+          </button>
+
+          <button data-tab="stats" class="nav-btn flex flex-col items-center justify-center py-2 rounded-xl transition-all">
+            <svg class="w-5 h-5 mb-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 7.004 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z"/>
+            </svg>
+            <span class="text-[11px] font-medium">Прогресс</span>
+          </button>
+        </div>
+      </div>
+    </nav>
+  </div>
+
+  <!-- ==================== МОДАЛКА: ДОБАВИТЬ ЗАДАЧУ ==================== -->
+  <div id="modal-task" class="sheet-hidden fixed inset-0 z-50 flex items-end justify-center pointer-events-none">
+    <div class="sheet-backdrop fixed inset-0 bg-black/60 backdrop-blur-xs" onclick="closeModals()"></div>
+    <div class="sheet-panel relative w-full max-w-md rounded-t-3xl card-surface p-5 pb-8 z-10 pointer-events-auto shadow-2xl">
+      <div class="w-10 h-1 bg-slate-500/40 rounded-full mx-auto mb-5"></div>
+      <h3 class="text-lg font-bold mb-4">Новая задача</h3>
+
+      <form id="form-task" class="space-y-4">
+        <div>
+          <label class="block text-xs font-medium text-tgHint mb-1.5">Название задачи</label>
+          <input id="input-task-title" type="text" required placeholder="Например: Сделать тренировку" class="w-full px-4 py-3 rounded-xl bg-tgBg border border-slate-500/20 text-sm text-tgText placeholder:text-tgHint focus:outline-none focus:border-tgAccent" />
+        </div>
+
+        <div>
+          <label class="block text-xs font-medium text-tgHint mb-1.5">Приоритет</label>
+          <div class="grid grid-cols-3 gap-2">
+            <button type="button" data-priority="high" class="priority-opt py-2.5 rounded-xl border border-slate-500/20 text-xs font-medium flex items-center justify-center gap-1.5 transition-all">
+              <span class="w-2 h-2 rounded-full bg-rose-500"></span> Высокий
+            </button>
+            <button type="button" data-priority="medium" class="priority-opt py-2.5 rounded-xl border border-slate-500/20 text-xs font-medium flex items-center justify-center gap-1.5 transition-all">
+              <span class="w-2 h-2 rounded-full bg-amber-400"></span> Средний
+            </button>
+            <button type="button" data-priority="low" class="priority-opt py-2.5 rounded-xl border border-slate-500/20 text-xs font-medium flex items-center justify-center gap-1.5 transition-all">
+              <span class="w-2 h-2 rounded-full bg-blue-400"></span> Низкий
+            </button>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-medium text-tgHint mb-1.5">Привязать к цели (необязательно)</label>
+          <select id="input-task-goal" class="w-full px-4 py-3 rounded-xl bg-tgBg border border-slate-500/20 text-sm text-tgText focus:outline-none focus:border-tgAccent">
+            <option value="">Без цели</option>
+          </select>
+        </div>
+
+        <button type="submit" class="w-full py-3.5 rounded-xl bg-tgAccent text-tgAccentText font-semibold text-sm active:scale-[0.98] transition-transform">
+          Добавить задачу
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ==================== МОДАЛКА: ДОБАВИТЬ ЦЕЛЬ ==================== -->
+  <div id="modal-goal" class="sheet-hidden fixed inset-0 z-50 flex items-end justify-center pointer-events-none">
+    <div class="sheet-backdrop fixed inset-0 bg-black/60 backdrop-blur-xs" onclick="closeModals()"></div>
+    <div class="sheet-panel relative w-full max-w-md rounded-t-3xl card-surface p-5 pb-8 z-10 pointer-events-auto shadow-2xl">
+      <div class="w-10 h-1 bg-slate-500/40 rounded-full mx-auto mb-5"></div>
+      <h3 class="text-lg font-bold mb-4">Новая цель</h3>
+
+      <form id="form-goal" class="space-y-4">
+        <div>
+          <label class="block text-xs font-medium text-tgHint mb-1.5">Иконка</label>
+          <div class="grid grid-cols-6 gap-2" id="emoji-picker">
+            <button type="button" data-emoji="🎯" class="emoji-opt py-2.5 rounded-xl bg-tgBg border border-slate-500/20 text-xl transition-all">🎯</button>
+            <button type="button" data-emoji="💪" class="emoji-opt py-2.5 rounded-xl bg-tgBg border border-slate-500/20 text-xl transition-all">💪</button>
+            <button type="button" data-emoji="💻" class="emoji-opt py-2.5 rounded-xl bg-tgBg border border-slate-500/20 text-xl transition-all">💻</button>
+            <button type="button" data-emoji="📚" class="emoji-opt py-2.5 rounded-xl bg-tgBg border border-slate-500/20 text-xl transition-all">📚</button>
+            <button type="button" data-emoji="💰" class="emoji-opt py-2.5 rounded-xl bg-tgBg border border-slate-500/20 text-xl transition-all">💰</button>
+            <button type="button" data-emoji="🚀" class="emoji-opt py-2.5 rounded-xl bg-tgBg border border-slate-500/20 text-xl transition-all">🚀</button>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-medium text-tgHint mb-1.5">Название цели</label>
+          <input id="input-goal-title" type="text" required placeholder="Например: Запустить свой проект" class="w-full px-4 py-3 rounded-xl bg-tgBg border border-slate-500/20 text-sm text-tgText placeholder:text-tgHint focus:outline-none focus:border-tgAccent" />
+        </div>
+
+        <div>
+          <label class="block text-xs font-medium text-tgHint mb-1.5">Дедлайн</label>
+          <input id="input-goal-deadline" type="date" required class="w-full px-4 py-3 rounded-xl bg-tgBg border border-slate-500/20 text-sm text-tgText focus:outline-none focus:border-tgAccent" />
+        </div>
+
+        <button type="submit" class="w-full py-3.5 rounded-xl bg-tgAccent text-tgAccentText font-semibold text-sm active:scale-[0.98] transition-transform">
+          Создать цель
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Тост-уведомление -->
+  <div id="toast" class="fixed top-5 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-xl bg-slate-800/95 border border-slate-600/40 text-xs font-medium text-white shadow-xl opacity-0 pointer-events-none translate-y-[-10px]"></div>
+
+  <script>
+    // =========================================================================
+    // 1. ИНТЕГРАЦИЯ С TELEGRAM WEBAPP
+    // =========================================================================
+    const tg = window.Telegram?.WebApp;
+
+    function initTelegram() {
+      if (tg) {
+        tg.ready();
+        tg.expand();
+        // Применяем цвет шапки под фон приложения, если поддерживается
+        try {
+          if (tg.themeParams?.bg_color) {
+            tg.setHeaderColor(tg.themeParams.bg_color);
+          }
+        } catch (e) {}
+      }
+
+      // Приветствие с именем пользователя
+      const firstName = tg?.initDataUnsafe?.user?.first_name || 'Амир';
+      document.getElementById('greeting').textContent = `Привет, ${firstName}!`;
+
+      // Текущая дата на русском
+      const now = new Date();
+      const dateStr = now.toLocaleDateString('ru-RU', {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long'
+      });
+      document.getElementById('current-date').textContent = dateStr.charAt(0).toUpperCase() + dateStr.slice(1);
+    }
+
+    function hapticImpact(style = 'light') {
+      try {
+        tg?.HapticFeedback?.impactOccurred(style);
+      } catch (e) {}
+    }
+
+    function hapticSuccess() {
+      try {
+        tg?.HapticFeedback?.notificationOccurred('success');
+      } catch (e) {}
+    }
+
+    // =========================================================================
+    // 2. ОБЁРТКА ХРАНИЛИЩА (Telegram CloudStorage + localStorage фолбэк)
+    // =========================================================================
+    const STORAGE_KEY = 'tma_goals_tasks_v1';
+
+    function canUseCloudStorage() {
+      return Boolean(tg && tg.CloudStorage && tg.isVersionAtLeast && tg.isVersionAtLeast('6.9'));
+    }
+
+    function loadData() {
+      return new Promise((resolve) => {
+        if (canUseCloudStorage()) {
+          tg.CloudStorage.getItem(STORAGE_KEY, (err, value) => {
+            if (!err && value) {
+              try {
+                resolve(JSON.parse(value));
+                return;
+              } catch (e) {}
+            }
+            resolve(loadFromLocal());
+          });
+        } else {
+          resolve(loadFromLocal());
+        }
+      });
+    }
+
+    function loadFromLocal() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        return raw ? JSON.parse(raw) : null;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    function saveData(data) {
+      const serialized = JSON.stringify(data);
+      try {
+        localStorage.setItem(STORAGE_KEY, serialized);
+      } catch (e) {}
+
+      if (canUseCloudStorage()) {
+        try {
+          tg.CloudStorage.setItem(STORAGE_KEY, serialized);
+        } catch (e) {}
+      }
+    }
+
+    // =========================================================================
+    // 3. СОСТОЯНИЕ ПРИЛОЖЕНИЯ И ДЕМО-ДАННЫЕ
+    // =========================================================================
+    function getDefaultDeadline(daysAhead) {
+      const d = new Date();
+      d.setDate(d.getDate() + daysAhead);
+      return d.toISOString().split('T')[0];
+    }
+
+    const DEFAULT_STATE = {
+      goals: [
+        {
+          id: 'g1',
+          emoji: '🚀',
+          title: 'Запустить свой Telegram Mini App',
+          deadline: getDefaultDeadline(14),
+          manualProgress: 0
+        },
+        {
+          id: 'g2',
+          emoji: '💪',
+          title: 'Выйти на стабильный режим тренировок',
+          deadline: getDefaultDeadline(30),
+          manualProgress: 0
+        }
+      ],
+      tasks: [
+        { id: 't1', title: 'Создать бота в @BotFather', priority: 'high', goalId: 'g1', done: true },
+        { id: 't2', title: 'Задеплоить приложение на Vercel', priority: 'high', goalId: 'g1', done: false },
+        { id: 't3', title: 'Провести тренировку в зале', priority: 'medium', goalId: 'g2', done: false },
+        { id: 't4', title: 'Пройти 8 000 шагов за день', priority: 'low', goalId: '', done: false }
+      ]
+    };
+
+    let state = { goals: [], tasks: [] };
+    let activeTab = 'tasks';
+    let taskFilter = 'all';
+    let selectedPriority = 'medium';
+    let selectedEmoji = '🎯';
+    let expandedGoalId = null;
+
+    // =========================================================================
+    // 4. ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
+    // =========================================================================
+    function showToast(msg) {
+      const toast = document.getElementById('toast');
+      toast.textContent = msg;
+      toast.classList.remove('opacity-0', 'translate-y-[-10px]');
+      clearTimeout(window._toastTimer);
+      window._toastTimer = setTimeout(() => {
+        toast.classList.add('opacity-0', 'translate-y-[-10px]');
+      }, 2200);
+    }
+
+    function escapeHtml(str) {
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    function getGoalProgress(goal) {
+      const linked = state.tasks.filter(t => t.goalId === goal.id);
+      if (linked.length === 0) {
+        return { percent: goal.manualProgress || 0, hasTasks: false, done: 0, total: 0 };
+      }
+      const done = linked.filter(t => t.done).length;
+      return {
+        percent: Math.round((done / linked.length) * 100),
+        hasTasks: true,
+        done,
+        total: linked.length
+      };
+    }
+
+    function formatDeadline(dateStr) {
+      if (!dateStr) return 'Без срока';
+      const target = new Date(dateStr + 'T00:00:00');
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const diffDays = Math.ceil((target - today) / (1000 * 60 * 60 * 24));
+      const formatted = target.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
+
+      if (diffDays < 0) return `${formatted} · просрочено`;
+      if (diffDays === 0) return `${formatted} · сегодня`;
+      if (diffDays === 1) return `${formatted} · завтра`;
+      return `${formatted} · осталось ${diffDays} дн.`;
+    }
+
+    const PRIORITY_META = {
+      high: { label: 'Высокий', dot: 'bg-rose-500' },
+      medium: { label: 'Средний', dot: 'bg-amber-400' },
+      low: { label: 'Низкий', dot: 'bg-blue-400' }
+    };
+
+    // =========================================================================
+    // 5. РЕНДЕРИНГ ИНТЕРФЕЙСА
+    // =========================================================================
+    function renderAll() {
+      renderHeaderProgress();
+      renderTasks();
+      renderGoals();
+      renderStats();
+      updateNavUI();
+    }
+
+    function renderHeaderProgress() {
+      const total = state.tasks.length;
+      const done = state.tasks.filter(t => t.done).length;
+      const pct = total ? Math.round((done / total) * 100) : 0;
+
+      document.getElementById('daily-progress-text').textContent = `${done} из ${total} (${pct}%)`;
+      document.getElementById('daily-progress-bar').style.width = `${pct}%`;
+
+      // Скрываем карточку прогресса на вкладке Статистика, чтобы не дублировать
+      const card = document.getElementById('daily-progress-card');
+      card.classList.toggle('hidden', activeTab !== 'tasks');
+    }
+
+    function renderTasks() {
+      // Обновляем активный чип фильтра
+      document.querySelectorAll('.filter-chip').forEach(btn => {
+        const isActive = btn.dataset.filter === taskFilter;
+        btn.className = `filter-chip px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
+          isActive
+            ? 'bg-tgAccent text-tgAccentText shadow-sm'
+            : 'card-surface text-tgHint hover:text-tgText'
+        }`;
+      });
+
+      const listEl = document.getElementById('tasks-list');
+      const emptyEl = document.getElementById('tasks-empty');
+
+      const filtered = state.tasks.filter(t => {
+        if (taskFilter === 'active') return !t.done;
+        if (taskFilter === 'done') return t.done;
+        return true;
+      });
+
+      if (filtered.length === 0) {
+        listEl.innerHTML = '';
+        emptyEl.classList.remove('hidden');
+        return;
+      }
+
+      emptyEl.classList.add('hidden');
+
+      listEl.innerHTML = filtered.map(task => {
+        const goal = state.goals.find(g => g.id === task.goalId);
+        const pMeta = PRIORITY_META[task.priority] || PRIORITY_META.medium;
+
+        return `
+          <div class="card-surface rounded-2xl p-3.5 flex items-start gap-3 transition-all ${task.done ? 'opacity-65' : ''}">
+            <button onclick="toggleTask('${task.id}')" aria-label="Отметить задачу" class="check-circle mt-0.5 w-6 h-6 rounded-full border-2 border-slate-500/50 flex items-center justify-center shrink-0 ${task.done ? 'checked' : ''}">
+              ${task.done ? '<svg class="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>' : ''}
+            </button>
+
+            <div class="flex-1 min-w-0">
+              <p class="text-sm font-medium leading-snug break-words ${task.done ? 'line-through text-tgHint' : 'text-tgText'}">
+                ${escapeHtml(task.title)}
+              </p>
+              <div class="flex flex-wrap items-center gap-2 mt-2">
+                <span class="inline-flex items-center gap-1.5 text-[11px] font-medium text-tgHint bg-tgBg/70 px-2 py-0.5 rounded-lg">
+                  <span class="w-1.5 h-1.5 rounded-full ${pMeta.dot}"></span>
+                  ${pMeta.label}
+                </span>
+                ${goal ? `
+                  <span class="inline-flex items-center gap-1 text-[11px] font-medium text-tgAccent bg-blue-500/10 px-2 py-0.5 rounded-lg truncate max-w-[180px]">
+                    <span>${goal.emoji}</span>
+                    <span class="truncate">${escapeHtml(goal.title)}</span>
+                  </span>
+                ` : ''}
+              </div>
+            </div>
+
+            <button onclick="deleteTask('${task.id}')" aria-label="Удалить задачу" class="p-1.5 rounded-lg text-tgHint hover:text-rose-400 active:scale-90 transition-all">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+              </svg>
+            </button>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function renderGoals() {
+      const listEl = document.getElementById('goals-list');
+      const emptyEl = document.getElementById('goals-empty');
+
+      if (state.goals.length === 0) {
+        listEl.innerHTML = '';
+        emptyEl.classList.remove('hidden');
+        return;
+      }
+
+      emptyEl.classList.add('hidden');
+
+      listEl.innerHTML = state.goals.map(goal => {
+        const prog = getGoalProgress(goal);
+        const isExpanded = expandedGoalId === goal.id;
+        const linkedTasks = state.tasks.filter(t => t.goalId === goal.id);
+
+        return `
+          <div class="card-surface rounded-2xl p-4 transition-all">
+            <div onclick="toggleGoalExpand('${goal.id}')" class="cursor-pointer">
+              <div class="flex items-start justify-between gap-3">
+                <div class="flex items-center gap-3 min-w-0">
+                  <div class="w-11 h-11 rounded-xl bg-tgBg flex items-center justify-center text-2xl shrink-0">
+                    ${goal.emoji}
+                  </div>
+                  <div class="min-w-0">
+                    <h3 class="text-sm font-semibold text-tgText leading-snug break-words">${escapeHtml(goal.title)}</h3>
+                    <p class="text-[11px] text-tgHint mt-0.5">${formatDeadline(goal.deadline)}</p>
+                  </div>
+                </div>
+                <span class="text-sm font-bold text-tgAccent shrink-0">${prog.percent}%</span>
+              </div>
+
+              <!-- Прогресс-бар цели -->
+              <div class="mt-3.5 w-full h-2 rounded-full bg-slate-500/20 overflow-hidden">
+                <div class="h-full rounded-full bg-tgAccent transition-all duration-500" style="width: ${prog.percent}%"></div>
+              </div>
+
+              <div class="mt-2 flex items-center justify-between text-[11px] text-tgHint">
+                <span>${prog.hasTasks ? `Задач выполнено: ${prog.done} из ${prog.total}` : 'Нет привязанных задач (ручной прогресс)'}</span>
+                <span>${isExpanded ? 'Свернуть ▲' : 'Подробнее ▼'}</span>
+              </div>
+            </div>
+
+            ${isExpanded ? `
+              <div class="mt-4 pt-3.5 border-t border-slate-500/15 space-y-3">
+                ${!prog.hasTasks ? `
+                  <div class="flex items-center justify-between bg-tgBg/60 p-2.5 rounded-xl">
+                    <span class="text-xs text-tgHint">Изменить прогресс вручную</span>
+                    <div class="flex items-center gap-2">
+                      <button onclick="adjustManualProgress('${goal.id}', -10)" class="w-8 h-8 rounded-lg card-surface text-sm font-bold active:scale-90">-10</button>
+                      <button onclick="adjustManualProgress('${goal.id}', 10)" class="w-8 h-8 rounded-lg bg-tgAccent text-tgAccentText text-sm font-bold active:scale-90">+10</button>
+                    </div>
+                  </div>
+                ` : `
+                  <div class="space-y-2">
+                    ${linkedTasks.map(t => `
+                      <div class="flex items-center gap-2.5 text-xs">
+                        <button onclick="toggleTask('${t.id}')" class="w-5 h-5 rounded-full border border-slate-500/50 flex items-center justify-center shrink-0 ${t.done ? 'bg-tgAccent border-tgAccent' : ''}">
+                          ${t.done ? '<svg class="w-3 h-3 text-white" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>' : ''}
+                        </button>
+                        <span class="${t.done ? 'line-through text-tgHint' : 'text-tgText'} flex-1">${escapeHtml(t.title)}</span>
+                      </div>
+                    `).join('')}
+                  </div>
+                `}
+
+                <!-- Быстрое добавление задачи в цель -->
+                <form onsubmit="quickAddTaskToGoal(event, '${goal.id}')" class="flex gap-2">
+                  <input type="text" required placeholder="Добавить шаг к цели..." class="flex-1 px-3 py-2 rounded-xl bg-tgBg border border-slate-500/20 text-xs text-tgText placeholder:text-tgHint focus:outline-none focus:border-tgAccent" />
+                  <button type="submit" class="px-3.5 py-2 rounded-xl bg-tgAccent text-tgAccentText text-xs font-semibold active:scale-95">+</button>
+                </form>
+
+                <button onclick="deleteGoal('${goal.id}')" class="w-full py-2 text-xs text-rose-400/90 hover:text-rose-400 font-medium">
+                  Удалить цель
+                </button>
+              </div>
+            ` : ''}
+          </div>
+        `;
+      }).join('');
+    }
+
+    function renderStats() {
+      const doneTasks = state.tasks.filter(t => t.done).length;
+      const totalTasks = state.tasks.length;
+      const activeGoals = state.goals.length;
+      const totalPct = totalTasks ? Math.round((doneTasks / totalTasks) * 100) : 0;
+
+      document.getElementById('stat-done-tasks').textContent = doneTasks;
+      document.getElementById('stat-active-goals').textContent = activeGoals;
+      document.getElementById('stat-total-progress').textContent = `${totalPct}%`;
+
+      const breakdownEl = document.getElementById('stats-goals-breakdown');
+      if (state.goals.length === 0) {
+        breakdownEl.innerHTML = '<p class="text-xs text-tgHint">Пока нет целей для отображения статистики.</p>';
+        return;
+      }
+
+      breakdownEl.innerHTML = state.goals.map(g => {
+        const prog = getGoalProgress(g);
+        return `
+          <div class="space-y-1.5">
+            <div class="flex items-center justify-between text-xs">
+              <span class="font-medium truncate pr-2">${g.emoji} ${escapeHtml(g.title)}</span>
+              <span class="font-semibold text-tgAccent shrink-0">${prog.percent}%</span>
+            </div>
+            <div class="w-full h-1.5 rounded-full bg-slate-500/20 overflow-hidden">
+              <div class="h-full rounded-full bg-tgAccent transition-all duration-500" style="width: ${prog.percent}%"></div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function updateNavUI() {
+      document.querySelectorAll('.nav-btn').forEach(btn => {
+        const isCurrent = btn.dataset.tab === activeTab;
+        btn.className = `nav-btn flex flex-col items-center justify-center py-2 rounded-xl transition-all ${
+          isCurrent ? 'bg-tgAccent/15 text-tgAccent' : 'text-tgHint hover:text-tgText'
+        }`;
+      });
+
+      document.getElementById('tab-tasks').classList.toggle('hidden', activeTab !== 'tasks');
+      document.getElementById('tab-goals').classList.toggle('hidden', activeTab !== 'goals');
+      document.getElementById('tab-stats').classList.toggle('hidden', activeTab !== 'stats');
+
+      // Показываем FAB только на вкладках Задачи и Цели
+      document.getElementById('fab-add').classList.toggle('hidden', activeTab === 'stats');
+    }
+
+    // =========================================================================
+    // 6. ДЕЙСТВИЯ ПОЛЬЗОВАТЕЛЯ
+    // =========================================================================
+    window.toggleTask = function(id) {
+      const task = state.tasks.find(t => t.id === id);
+      if (!task) return;
+      task.done = !task.done;
+      if (task.done) hapticSuccess();
+      else hapticImpact('light');
+      saveData(state);
+      renderAll();
+    };
+
+    window.deleteTask = function(id) {
+      hapticImpact('light');
+      state.tasks = state.tasks.filter(t => t.id !== id);
+      saveData(state);
+      renderAll();
+      showToast('Задача удалена');
+    };
+
+    window.toggleGoalExpand = function(id) {
+      hapticImpact('light');
+      expandedGoalId = expandedGoalId === id ? null : id;
+      renderGoals();
+    };
+
+    window.adjustManualProgress = function(id, delta) {
+      const goal = state.goals.find(g => g.id === id);
+      if (!goal) return;
+      hapticImpact('light');
+      goal.manualProgress = Math.max(0, Math.min(100, (goal.manualProgress || 0) + delta));
+      if (goal.manualProgress === 100) hapticSuccess();
+      saveData(state);
+      renderAll();
+    };
+
+    window.quickAddTaskToGoal = function(e, goalId) {
+      e.preventDefault();
+      const input = e.target.querySelector('input');
+      const title = input.value.trim();
+      if (!title) return;
+      state.tasks.unshift({
+        id: 't_' + Date.now(),
+        title,
+        priority: 'medium',
+        goalId,
+        done: false
+      });
+      input.value = '';
+      hapticSuccess();
+      saveData(state);
+      renderAll();
+      showToast('Шаг добавлен к цели');
+    };
+
+    window.deleteGoal = function(id) {
+      hapticImpact('light');
+      state.goals = state.goals.filter(g => g.id !== id);
+      // Отвязываем задачи от удалённой цели
+      state.tasks.forEach(t => {
+        if (t.goalId === id) t.goalId = '';
+      });
+      if (expandedGoalId === id) expandedGoalId = null;
+      saveData(state);
+      renderAll();
+      showToast('Цель удалена');
+    };
+
+    // Модальные окна
+    function openTaskModal() {
+      hapticImpact('light');
+      const select = document.getElementById('input-task-goal');
+      select.innerHTML = '<option value="">Без цели</option>' +
+        state.goals.map(g => `<option value="${g.id}">${g.emoji} ${escapeHtml(g.title)}</option>`).join('');
+      selectPriority('medium');
+      document.getElementById('modal-task').classList.remove('sheet-hidden', 'pointer-events-none');
+      setTimeout(() => document.getElementById('input-task-title').focus(), 200);
+    }
+
+    function openGoalModal() {
+      hapticImpact('light');
+      selectEmoji('🎯');
+      document.getElementById('input-goal-deadline').value = getDefaultDeadline(14);
+      document.getElementById('modal-goal').classList.remove('sheet-hidden', 'pointer-events-none');
+      setTimeout(() => document.getElementById('input-goal-title').focus(), 200);
+    }
+
+    window.closeModals = function() {
+      document.getElementById('modal-task').classList.add('sheet-hidden', 'pointer-events-none');
+      document.getElementById('modal-goal').classList.add('sheet-hidden', 'pointer-events-none');
+    };
+
+    function selectPriority(p) {
+      selectedPriority = p;
+      document.querySelectorAll('.priority-opt').forEach(btn => {
+        const active = btn.dataset.priority === p;
+        btn.classList.toggle('border-tgAccent', active);
+        btn.classList.toggle('bg-tgAccent/15', active);
+        btn.classList.toggle('text-tgText', active);
+        btn.classList.toggle('text-tgHint', !active);
+      });
+    }
+
+    function selectEmoji(em) {
+      selectedEmoji = em;
+      document.querySelectorAll('.emoji-opt').forEach(btn => {
+        const active = btn.dataset.emoji === em;
+        btn.classList.toggle('border-tgAccent', active);
+        btn.classList.toggle('bg-tgAccent/20', active);
+        btn.classList.toggle('scale-105', active);
+      });
+    }
+
+    // =========================================================================
+    // 7. ОБРАБОТЧИКИ СОБЫТИЙ И ЗАПУСК
+    // =========================================================================
+    document.querySelectorAll('.nav-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        hapticImpact('light');
+        activeTab = btn.dataset.tab;
+        renderAll();
+      });
+    });
+
+    document.querySelectorAll('.filter-chip').forEach(btn => {
+      btn.addEventListener('click', () => {
+        hapticImpact('light');
+        taskFilter = btn.dataset.filter;
+        renderTasks();
+      });
+    });
+
+    document.getElementById('fab-add').addEventListener('click', () => {
+      if (activeTab === 'goals') openGoalModal();
+      else openTaskModal();
+    });
+
+    document.querySelectorAll('.priority-opt').forEach(btn => {
+      btn.addEventListener('click', () => {
+        hapticImpact('light');
+        selectPriority(btn.dataset.priority);
+      });
+    });
+
+    document.querySelectorAll('.emoji-opt').forEach(btn => {
+      btn.addEventListener('click', () => {
+        hapticImpact('light');
+        selectEmoji(btn.dataset.emoji);
+      });
+    });
+
+    document.getElementById('form-task').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const titleInput = document.getElementById('input-task-title');
+      const goalId = document.getElementById('input-task-goal').value;
+      const title = titleInput.value.trim();
+      if (!title) return;
+
+      state.tasks.unshift({
+        id: 't_' + Date.now(),
+        title,
+        priority: selectedPriority,
+        goalId,
+        done: false
+      });
+
+      titleInput.value = '';
+      closeModals();
+      hapticSuccess();
+      saveData(state);
+      renderAll();
+      showToast('Задача добавлена');
+    });
+
+    document.getElementById('form-goal').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const titleInput = document.getElementById('input-goal-title');
+      const deadline = document.getElementById('input-goal-deadline').value;
+      const title = titleInput.value.trim();
+      if (!title) return;
+
+      state.goals.unshift({
+        id: 'g_' + Date.now(),
+        emoji: selectedEmoji,
+        title,
+        deadline,
+        manualProgress: 0
+      });
+
+      titleInput.value = '';
+      closeModals();
+      hapticSuccess();
+      saveData(state);
+      renderAll();
+      showToast('Цель создана');
+    });
+
+    document.getElementById('btn-clear-completed').addEventListener('click', () => {
+      const doneCount = state.tasks.filter(t => t.done).length;
+      if (doneCount === 0) {
+        showToast('Нет выполненных задач');
+        return;
+      }
+      hapticImpact('light');
+      state.tasks = state.tasks.filter(t => !t.done);
+      saveData(state);
+      renderAll();
+      showToast(`Удалено задач: ${doneCount}`);
+    });
+
+    // Инициализация
+    (async function bootstrap() {
+      initTelegram();
+      const saved = await loadData();
+      if (saved && Array.isArray(saved.tasks) && Array.isArray(saved.goals)) {
+        state = saved;
+      } else {
+        state = JSON.parse(JSON.stringify(DEFAULT_STATE));
+        saveData(state);
+      }
+      renderAll();
+    })();
+  </script>
+</body>
+</html>
